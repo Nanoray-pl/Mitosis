@@ -249,7 +249,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldarg_1);
 				il.Emit(OpCodes.Ldloca, copyLocal);
-				il.Emit(OpCodes.Callvirt, typeof(ICloneListener).GetMethod("Decorate")!.MakeGenericMethod(type));
+				il.Emit(OpCodes.Callvirt, typeof(ICloneListener).GetMethod(nameof(ICloneListener.OnClone))!.MakeGenericMethod(type));
 			}
 		}
 		else
@@ -269,7 +269,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldarg_1);
 				il.Emit(OpCodes.Ldloc, copyLocal);
-				il.Emit(OpCodes.Callvirt, typeof(IReferenceCloneListener).GetMethod("Decorate")!.MakeGenericMethod(type));
+				il.Emit(OpCodes.Callvirt, typeof(IReferenceCloneListener).GetMethod(nameof(IReferenceCloneListener.OnClone))!.MakeGenericMethod(type));
 			}
 		}
 

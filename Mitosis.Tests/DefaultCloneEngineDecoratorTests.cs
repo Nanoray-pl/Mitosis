@@ -10,7 +10,7 @@ internal sealed class DefaultCloneEngineDecoratorTests
 
 	private sealed class ConditionalWeakTableListener(ConditionalWeakTable<object, Dictionary<string, object>> table) : IReferenceCloneListener
 	{
-		public void Decorate<T>(ICloneEngine engine, T source, T destination) where T : class
+		public void OnClone<T>(ICloneEngine engine, T source, T destination) where T : class
 		{
 			if (!table.TryGetValue(source, out var sourceDictionary))
 				return;

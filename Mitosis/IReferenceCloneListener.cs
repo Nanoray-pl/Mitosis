@@ -12,5 +12,5 @@ public interface IReferenceCloneListener
 	/// <param name="source">The original value.</param>
 	/// <param name="destination">The cloned value.</param>
 	/// <typeparam name="T">The type of cloned value.</typeparam>
-	void Decorate<T>(ICloneEngine engine, T source, T destination) where T : class;
+	void OnClone<T>(ICloneEngine engine, T source, T destination) where T : class;
 }
