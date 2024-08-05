@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mitosis", "Mitosis\Mitosis.csproj", "{FAEF3EB5-C31A-48A0-B099-CB2DC9C5FD2A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mitosis.Tests", "Mitosis.Tests\Mitosis.Tests.csproj", "{5A741059-A950-4AF1-B1BB-4ED53E8B7E3E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FAEF3EB5-C31A-48A0-B099-CB2DC9C5FD2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FAEF3EB5-C31A-48A0-B099-CB2DC9C5FD2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FAEF3EB5-C31A-48A0-B099-CB2DC9C5FD2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FAEF3EB5-C31A-48A0-B099-CB2DC9C5FD2A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5A741059-A950-4AF1-B1BB-4ED53E8B7E3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5A741059-A950-4AF1-B1BB-4ED53E8B7E3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5A741059-A950-4AF1-B1BB-4ED53E8B7E3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5A741059-A950-4AF1-B1BB-4ED53E8B7E3E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
