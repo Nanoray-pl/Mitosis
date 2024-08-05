@@ -2,7 +2,8 @@
 
 # Release notes
 
-## Upcoming release
+## 2.0.1
+Released 5 August 2024.
 
 * Fixed reference cycles causing `StackOverflowException`s.
 
