@@ -7,7 +7,7 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 
 		<PackageId>Mitosis</PackageId>
-		<Version>1.0.0</Version>
+		<Version>2.0.0</Version>
 		<Authors>Shockah</Authors>
 		<Description>A .NET deep copy / clone library.</Description>
 		<PackageTags>clone; copy; deep; deep clone; deep copy; deepclone; deepcopy</PackageTags>
