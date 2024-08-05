@@ -176,6 +176,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 		var copyLocal = il.DeclareLocal(type);
 
+		#region Initialize copy
 		if (type.IsArray)
 		{
 			il.Emit(OpCodes.Ldarg_0);
@@ -200,16 +201,6 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		{
 			il.Emit(OpCodes.Ldloca, copyLocal);
 			il.Emit(OpCodes.Initobj, type);
-
-			foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-			{
-				il.Emit(OpCodes.Ldloca, copyLocal);
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldarg_1);
-				il.Emit(OpCodes.Ldfld, field);
-				il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.Clone))!.MakeGenericMethod(field.FieldType));
-				il.Emit(OpCodes.Stfld, field);
-			}
 		}
 		else
 		{
@@ -226,18 +217,33 @@ public sealed class DefaultCloneEngine : ICloneEngine
 			}
 			
 			il.Emit(OpCodes.Stloc, copyLocal);
-			
-			foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
-			{
-				il.Emit(OpCodes.Ldloc, copyLocal);
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldarg_1);
-				il.Emit(OpCodes.Ldfld, field);
-				il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.Clone))!.MakeGenericMethod(field.FieldType));
-				il.Emit(OpCodes.Stfld, field);
-			}
 		}
-
+		#endregion
+		
+		#region Track reference type copy (arrays do it in their respective methods)
+		if (type is { IsValueType: false, IsArray: false })
+		{
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Ldfld, TrackedCopiesField);
+			il.Emit(OpCodes.Ldarg_1);
+			il.Emit(OpCodes.Ldloc, copyLocal);
+			il.Emit(OpCodes.Call, ObjectObjectDictionarySetItemMethod);
+		}
+		#endregion
+		
+		#region Copy fields
+		foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+		{
+			il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Ldarg_1);
+			il.Emit(OpCodes.Ldfld, field);
+			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.Clone))!.MakeGenericMethod(field.FieldType));
+			il.Emit(OpCodes.Stfld, field);
+		}
+		#endregion
+		
+		#region Call listeners
 		if (type.IsValueType)
 		{
 			for (var i = 0; i < this.CloneListeners.Count; i++)
@@ -254,12 +260,6 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		}
 		else
 		{
-			il.Emit(OpCodes.Ldarg_0);
-			il.Emit(OpCodes.Ldfld, TrackedCopiesField);
-			il.Emit(OpCodes.Ldarg_1);
-			il.Emit(OpCodes.Ldloc, copyLocal);
-			il.Emit(OpCodes.Call, ObjectObjectDictionarySetItemMethod);
-			
 			for (var i = 0; i < this.ReferenceCloneListeners.Count; i++)
 			{
 				il.Emit(OpCodes.Ldarg_0);
@@ -272,6 +272,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 				il.Emit(OpCodes.Callvirt, typeof(IReferenceCloneListener).GetMethod(nameof(IReferenceCloneListener.OnClone))!.MakeGenericMethod(type));
 			}
 		}
+		#endregion
 
 		il.Emit(OpCodes.Ldloc, copyLocal);
 		il.Emit(OpCodes.Ret);
@@ -281,6 +282,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 	private T[] CloneArray1D<T>(T[] original)
 	{
 		var copy = new T[original.Length];
+		this.TrackedCopies![original] = copy;
 		for (var i = 0; i < original.Length; i++)
 			copy[i] = this.Clone(original[i]);
 		return copy;
@@ -292,6 +294,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		var secondLength = original.GetLength(1);
 		
 		var copy = new T[firstLength, secondLength];
+		this.TrackedCopies![original] = copy;
 		for (var i = 0; i < firstLength; i++)
 			for (var j = 0; j < secondLength; j++)
 				copy[i, j] = this.Clone(original[i, j]);

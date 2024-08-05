@@ -10,6 +10,7 @@ internal sealed class DefaultCloneEngineTests
 	private record ImmutableRecordClass(int Number, string? Text);
 	private record struct ImmutableRecordStruct(int Number, string? Text);
 	private class MutableClass { public int Number; }
+	private class SelfReferencing { public SelfReferencing? Reference; }
 	
 	private static void TestNotSame<T>(DefaultCloneEngine engine, T original)
 		where T : class
@@ -90,5 +91,18 @@ internal sealed class DefaultCloneEngineTests
 		Assert.AreEqual(list.Count, listCopy.Count);
 		Assert.AreSame(listCopy[0], listCopy[1]);
 		Assert.AreSame(listCopy[0], listCopy[2]);
+	}
+
+	[Test]
+	public void TestReferenceCycle()
+	{
+		var engine = new DefaultCloneEngine();
+
+		var obj = new SelfReferencing();
+		obj.Reference = obj;
+		var copy = engine.Clone(obj);
+		
+		Assert.AreNotSame(obj, copy);
+		Assert.AreSame(copy.Reference, copy);
 	}
 }
