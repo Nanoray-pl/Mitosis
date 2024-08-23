@@ -2,6 +2,10 @@
 
 # Release notes
 
+## Upcoming release
+
+* Fixed cloned objects not getting their base type fields cloned.
+
 ## 2.0.1
 Released 5 August 2024.
 

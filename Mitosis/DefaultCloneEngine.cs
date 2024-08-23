@@ -232,7 +232,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		#endregion
 		
 		#region Copy fields
-		foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+		foreach (var field in GetAllFields(type))
 		{
 			il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
 			il.Emit(OpCodes.Ldarg_0);
@@ -277,6 +277,18 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		il.Emit(OpCodes.Ldloc, copyLocal);
 		il.Emit(OpCodes.Ret);
 		return method.CreateDelegate(typeof(CloneDelegate<>).MakeGenericType(type));
+
+		static IEnumerable<FieldInfo> GetAllFields(Type type)
+		{
+			while (true)
+			{
+				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+					yield return field;
+				if (type.BaseType is not { } baseType)
+					break;
+				type = baseType;
+			}
+		}
 	}
 
 	private T[] CloneArray1D<T>(T[] original)

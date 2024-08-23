@@ -105,4 +105,16 @@ internal sealed class DefaultCloneEngineTests
 		Assert.AreNotSame(obj, copy);
 		Assert.AreSame(copy.Reference, copy);
 	}
+
+	[Test]
+	public void TestHashSet()
+	{
+		var engine = new DefaultCloneEngine();
+
+		var set = new HashSet<string> { "asdf" };
+		var copy = engine.Clone(set);
+		
+		Assert.AreNotSame(set, copy);
+		Assert.IsTrue(copy.SetEquals(set));
+	}
 }
