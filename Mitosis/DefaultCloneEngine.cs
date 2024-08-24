@@ -132,6 +132,8 @@ public sealed class DefaultCloneEngine : ICloneEngine
 	{
 		if (type.IsPrimitive || type.IsEnum || type.IsPointer || type == typeof(string))
 			return true;
+		if (type.IsAssignableTo(typeof(Delegate)))
+			return true;
 		if (!type.IsValueType && type.GetMethod("<Clone>$") is null)
 			return false;
 
