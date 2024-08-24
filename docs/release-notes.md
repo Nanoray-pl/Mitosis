@@ -2,7 +2,8 @@
 
 # Release notes
 
-## Upcoming release
+## 2.0.3
+Released 24 August 2024.
 
 * Mitosis no longer attempts to clone delegates, and instead just reuses them. While it's technically not a real clone, it's probably safer behavior than outright ignoring them.
 
