@@ -2,6 +2,10 @@
 
 # Release notes
 
+## Upcoming release
+
+* Fixed issues cloning some types (mainly subclasses).
+
 ## 2.0.3
 Released 24 August 2024.
 

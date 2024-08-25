@@ -3,9 +3,11 @@ using NUnit.Framework;
 namespace Nanoray.Mitosis.Tests;
 
 [TestFixture]
-internal sealed class DefaultCloneEngineTests
+public sealed class DefaultCloneEngineTests
 {
 	private enum TestEnum { C = 2 }
+	public class BaseClass { public int Id = 0; }
+	public class Subclass : BaseClass;
 
 	private record ImmutableRecordClass(int Number, string? Text);
 	private record struct ImmutableRecordStruct(int Number, string? Text);
@@ -116,5 +118,35 @@ internal sealed class DefaultCloneEngineTests
 		
 		Assert.AreNotSame(set, copy);
 		Assert.IsTrue(copy.SetEquals(set));
+	}
+
+	[Test]
+	public void TestSubclass()
+	{
+		var engine = new DefaultCloneEngine();
+
+		var obj = new Subclass { Id = 1 };
+		var copy = engine.Clone<BaseClass>(obj);
+		
+		Assert.AreNotSame(obj, copy);
+		Assert.AreEqual(obj.GetType(), copy.GetType());
+		Assert.AreEqual(obj.Id, copy.Id);
+	}
+
+	[Test]
+	public void TestSubclassDictionary()
+	{
+		var engine = new DefaultCloneEngine();
+
+		var original = new Dictionary<string, BaseClass>
+		{
+			{ "asdf", new Subclass { Id = 1 } }
+		};
+		var copy = engine.Clone(original);
+		
+		Assert.AreNotSame(original, copy);
+		Assert.AreNotSame(original.Values.First(), copy.Values.First());
+		Assert.AreEqual(original.Values.First().GetType(), copy.Values.First().GetType());
+		Assert.AreEqual(original.Values.First().Id, copy.Values.First().Id);
 	}
 }

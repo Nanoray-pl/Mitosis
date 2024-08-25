@@ -16,9 +16,9 @@ public sealed class DefaultCloneEngine : ICloneEngine
 {
 	private delegate T CloneDelegate<T>(DefaultCloneEngine engine, T value);
 
-	private static readonly FieldInfo TrackedCopiesField = typeof(DefaultCloneEngine).GetField(nameof(TrackedCopies), BindingFlags.Instance | BindingFlags.NonPublic)!;
-	private static readonly FieldInfo CloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(CloneListeners), BindingFlags.Instance | BindingFlags.NonPublic)!;
-	private static readonly FieldInfo ReferenceCloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(ReferenceCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic)!;
+	private static readonly FieldInfo TrackedCopiesField = typeof(DefaultCloneEngine).GetField(nameof(TrackedCopies), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+	private static readonly FieldInfo CloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(CloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+	private static readonly FieldInfo ReferenceCloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(ReferenceCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
 	private static readonly MethodInfo GetTypeFromHandleMethod = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle))!;
 	private static readonly MethodInfo GetUninitializedObjectMethod = typeof(RuntimeHelpers).GetMethod(nameof(RuntimeHelpers.GetUninitializedObject))!;
 	private static readonly MethodInfo ObjectObjectDictionaryTryGetValueMethod = typeof(Dictionary<object, object>).GetMethod(nameof(Dictionary<object, object>.TryGetValue))!;
@@ -107,7 +107,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 			il.Emit(OpCodes.Ldarg_0);
 			il.Emit(OpCodes.Ldarg_1);
-			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CorrectedTypeClone), BindingFlags.Instance | BindingFlags.NonPublic)!.MakeGenericMethod(subtype));
+			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CorrectedTypeClone), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(subtype));
 			if (supertype == typeof(object) && subtype.IsValueType)
 				il.Emit(OpCodes.Box, subtype);
 			il.Emit(OpCodes.Ret);
@@ -142,7 +142,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 		try
 		{
-			var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+			var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
 			if (fields.Any(field => !this.IsImmutable(field.FieldType)))
 				return false;
 			if (!type.IsValueType && fields.Any(field => !field.IsInitOnly))
@@ -188,10 +188,10 @@ public sealed class DefaultCloneEngine : ICloneEngine
 			switch (type.GetArrayRank())
 			{
 				case 1:
-					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CloneArray1D), BindingFlags.Instance | BindingFlags.NonPublic)!.MakeGenericMethod(elementType));
+					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CloneArray1D), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(elementType));
 					break;
 				case 2:
-					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CloneArray2D), BindingFlags.Instance | BindingFlags.NonPublic)!.MakeGenericMethod(elementType));
+					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CloneArray2D), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(elementType));
 					break;
 				default:
 					throw new ArgumentException($"Unsupported type `{type.FullName}`");
@@ -206,7 +206,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		}
 		else
 		{
-			if (type.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic, []) is { } ctor)
+			if (type.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, []) is { } ctor)
 			{
 				il.Emit(OpCodes.Newobj, ctor);
 			}
@@ -284,7 +284,9 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		{
 			while (true)
 			{
-				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+				if (type == typeof(object))
+					break;
+				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
 					yield return field;
 				if (type.BaseType is not { } baseType)
 					break;
