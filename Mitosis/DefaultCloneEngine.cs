@@ -206,7 +206,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		}
 		else
 		{
-			if (type.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly, []) is { } ctor)
+			if (type.GetConstructor(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly, []) is { } ctor)
 			{
 				il.Emit(OpCodes.Newobj, ctor);
 			}
