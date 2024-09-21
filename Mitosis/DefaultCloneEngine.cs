@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Nanoray.Mitosis;
 
@@ -25,7 +26,8 @@ public sealed class DefaultCloneEngine : ICloneEngine
 	private static readonly MethodInfo ObjectObjectDictionarySetItemMethod = typeof(Dictionary<object, object>).GetMethod("set_Item")!;
 	private static readonly MethodInfo CloneDecoratorListGetItemMethod = typeof(List<ICloneListener>).GetMethod("get_Item")!;
 	private static readonly MethodInfo ReferenceCloneDecoratorListGetItemMethod = typeof(List<IReferenceCloneListener>).GetMethod("get_Item")!;
-	
+
+	private readonly List<Func<FieldInfo, DefaultCloneEngineFieldFilterBehavior>> FieldFilters = [];
 	private readonly List<ICloneListener> CloneListeners = [];
 	private readonly List<IReferenceCloneListener> ReferenceCloneListeners = [];
 	private readonly Dictionary<Type, Delegate> CompiledCloneDelegates = []; // delegate is CloneDelegate<T>
@@ -44,6 +46,16 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		if (listener is ICloneListener anyListener)
 			this.CloneListeners.Add(anyListener);
 		
+		this.CompiledCloneDelegates.Clear();
+	}
+
+	/// <summary>
+	/// Registers a delegate that can exclude any fields from being cloned.
+	/// </summary>
+	/// <param name="filter">The filter delegate.</param>
+	public void RegisterFieldFilter(Func<FieldInfo, DefaultCloneEngineFieldFilterBehavior> filter)
+	{
+		this.FieldFilters.Add(filter);
 		this.CompiledCloneDelegates.Clear();
 	}
 	
@@ -132,7 +144,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 	{
 		if (type.IsPrimitive || type.IsEnum || type.IsPointer || type == typeof(string))
 			return true;
-		if (type.IsAssignableTo(typeof(Delegate)))
+		if (type.IsAssignableTo(typeof(Delegate)) || type.IsAssignableTo(typeof(ContextBoundObject)))
 			return true;
 		if (!type.IsValueType && type.GetMethod("<Clone>$") is null)
 			return false;
@@ -236,12 +248,80 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		#region Copy fields
 		foreach (var field in GetAllFields(type))
 		{
-			il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
-			il.Emit(OpCodes.Ldarg_0);
-			il.Emit(OpCodes.Ldarg_1);
-			il.Emit(OpCodes.Ldfld, field);
-			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.Clone))!.MakeGenericMethod(field.FieldType));
-			il.Emit(OpCodes.Stfld, field);
+			var behavior = DefaultCloneEngineFieldFilterBehavior.Clone;
+			foreach (var filter in this.FieldFilters)
+			{
+				var alternateBehavior = filter(field);
+				if (alternateBehavior != behavior)
+				{
+					behavior = alternateBehavior;
+					break;
+				}
+			}
+
+			switch (behavior)
+			{
+				case DefaultCloneEngineFieldFilterBehavior.Clone:
+					il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+					il.Emit(OpCodes.Ldarg_0);
+					il.Emit(OpCodes.Ldarg_1);
+					il.Emit(OpCodes.Ldfld, field);
+					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.Clone))!.MakeGenericMethod(field.FieldType));
+					il.Emit(OpCodes.Stfld, field);
+					break;
+				case DefaultCloneEngineFieldFilterBehavior.CopyValue:
+					il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+					il.Emit(OpCodes.Ldarg_1);
+					il.Emit(OpCodes.Ldfld, field);
+					il.Emit(OpCodes.Stfld, field);
+					break;
+				case DefaultCloneEngineFieldFilterBehavior.DoNotInitialize:
+					break;
+				case DefaultCloneEngineFieldFilterBehavior.AssignDefault:
+					if (!field.FieldType.IsValueType)
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Ldnull);
+						il.Emit(OpCodes.Stfld, field);
+					}
+					else if (!field.FieldType.IsPrimitive)
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Ldflda, field);
+						il.Emit(OpCodes.Initobj, field.FieldType);
+					}
+					else if (field.FieldType == typeof(float))
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Ldc_R4, 0f);
+						il.Emit(OpCodes.Stfld, field);
+					}
+					else if (field.FieldType == typeof(double))
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Ldc_R8, 0.0);
+						il.Emit(OpCodes.Stfld, field);
+					}
+					else if (Marshal.SizeOf(field.FieldType) <= 4)
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Ldc_I4_0);
+						il.Emit(OpCodes.Stfld, field);
+					}
+					else if (Marshal.SizeOf(field.FieldType) == 8)
+					{
+						il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
+						il.Emit(OpCodes.Conv_I8);
+						il.Emit(OpCodes.Stfld, field);
+					}
+					else
+					{
+						throw new ArgumentException($"Unsupported field type {field.FieldType}");
+					}
+					break;
+				default:
+					throw new InvalidOperationException($"Invalid {nameof(DefaultCloneEngineFieldFilterBehavior)}");
+			}
 		}
 		#endregion
 		

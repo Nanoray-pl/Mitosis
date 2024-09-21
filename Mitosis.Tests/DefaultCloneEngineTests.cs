@@ -6,7 +6,7 @@ namespace Nanoray.Mitosis.Tests;
 public sealed class DefaultCloneEngineTests
 {
 	private enum TestEnum { C = 2 }
-	public class BaseClass { public int Id = 0; }
+	public class BaseClass { public int Id; }
 	public class Subclass : BaseClass;
 
 	private record ImmutableRecordClass(int Number, string? Text);
