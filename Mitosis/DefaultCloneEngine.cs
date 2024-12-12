@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
@@ -18,23 +19,30 @@ public sealed class DefaultCloneEngine : ICloneEngine
 	private delegate T CloneDelegate<T>(DefaultCloneEngine engine, T value);
 
 	private static readonly FieldInfo TrackedCopiesField = typeof(DefaultCloneEngine).GetField(nameof(TrackedCopies), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
-	private static readonly FieldInfo CloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(CloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
-	private static readonly FieldInfo ReferenceCloneListenersField = typeof(DefaultCloneEngine).GetField(nameof(ReferenceCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+	private static readonly MethodInfo ObtainCorrectedTypeCloneDelegateMethod = typeof(DefaultCloneEngine).GetMethod(nameof(ObtainCorrectedTypeCloneDelegate), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+	private static readonly MethodInfo CallReferenceTypeCloneListenersMethod = typeof(DefaultCloneEngine).GetMethod(nameof(CallReferenceTypeCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
 	private static readonly MethodInfo GetTypeFromHandleMethod = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle))!;
 	private static readonly MethodInfo GetUninitializedObjectMethod = typeof(RuntimeHelpers).GetMethod(nameof(RuntimeHelpers.GetUninitializedObject))!;
 	private static readonly MethodInfo ObjectObjectDictionaryTryGetValueMethod = typeof(Dictionary<object, object>).GetMethod(nameof(Dictionary<object, object>.TryGetValue))!;
 	private static readonly MethodInfo ObjectObjectDictionarySetItemMethod = typeof(Dictionary<object, object>).GetMethod("set_Item")!;
-	private static readonly MethodInfo CloneDecoratorListGetItemMethod = typeof(List<ICloneListener>).GetMethod("get_Item")!;
-	private static readonly MethodInfo ReferenceCloneDecoratorListGetItemMethod = typeof(List<IReferenceCloneListener>).GetMethod("get_Item")!;
 
+	private readonly List<ICloneEngine> SpecializedEngines = [];
 	private readonly List<Func<FieldInfo, DefaultCloneEngineFieldFilterBehavior>> FieldFilters = [];
 	private readonly List<ICloneListener> CloneListeners = [];
 	private readonly List<IReferenceCloneListener> ReferenceCloneListeners = [];
-	private readonly Dictionary<Type, Delegate> CompiledCloneDelegates = []; // delegate is CloneDelegate<T>
+	private readonly Dictionary<Type, Lazy<Delegate>> CompiledCloneDelegates = []; // delegate is CloneDelegate<T>
 	private readonly Dictionary<(Type Supertype, Type Subtype), Delegate> CorrectedTypeCloneDelegates = []; // delegate is CloneDelegate<T>
+	private readonly Dictionary<Type, Delegate> CallReferenceTypeCloneListenersDelegates = []; // delegate is Func<DefaultCloneEngine, T, T, T>
 	private readonly Dictionary<Type, bool> IsImmutableMap = [];
 	private readonly HashSet<Type> IsImmutableInProgress = [];
 	private Dictionary<object, object>? TrackedCopies;
+
+	/// <summary>
+	/// Registers an <see cref="ICloneEngine"/> that can attempt to clone the value in a specialized way. 
+	/// </summary>
+	/// <param name="engine">The engine.</param>
+	public void RegisterSpecializedEngine(ICloneEngine engine)
+		=> this.SpecializedEngines.Add(engine);
 
 	/// <summary>
 	/// Registers an <see cref="IReferenceCloneListener"/> which gets passed all cloned reference types.
@@ -45,8 +53,6 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		this.ReferenceCloneListeners.Add(listener);
 		if (listener is ICloneListener anyListener)
 			this.CloneListeners.Add(anyListener);
-		
-		this.CompiledCloneDelegates.Clear();
 	}
 
 	/// <summary>
@@ -58,28 +64,49 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		this.FieldFilters.Add(filter);
 		this.CompiledCloneDelegates.Clear();
 	}
+
+	/// <inheritdoc/>
+	public bool TryClone<T>(T original, [MaybeNullWhen(false)] out T clone)
+	{
+		try
+		{
+			clone = this.Clone(original);
+			return true;
+		}
+		catch
+		{
+			clone = default;
+			return false;
+		}
+	}
 	
 	/// <inheritdoc/>
-	public T Clone<T>(T value)
+	public T Clone<T>(T original)
 	{
-		if (value is null)
+		foreach (var engine in this.SpecializedEngines)
+		{
+			if (!engine.TryClone(original, out var specializedClone))
+				continue;
+			specializedClone = this.CallCloneListeners(original, specializedClone);
+			return specializedClone;
+		}
+		
+		if (original is null)
 			return default!;
-
-		var type = value.GetType();
-		if (this.IsImmutable(type))
-			return value;
-
-		return ((CloneDelegate<T>)this.ObtainCorrectedTypeCloneDelegate<T>(value)).Invoke(this, value);
+		
+		var clone = ((CloneDelegate<T>)this.ObtainCorrectedTypeCloneDelegate(original)).Invoke(this, original);
+		clone = this.CallCloneListeners(original, clone);
+		return clone;
 	}
 
-	private T CorrectedTypeClone<T>(T value)
+	private T CorrectedTypeClone<T>(T original)
 	{
-		if (value is null)
+		if (original is null)
 			return default!;
 
-		var type = value.GetType();
+		var type = original.GetType();
 		if (this.IsImmutable(type))
-			return value;
+			return original;
 
 		var isRootCall = this.TrackedCopies is null;
 		if (isRootCall)
@@ -87,7 +114,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 		try
 		{
-			return ((CloneDelegate<T>)this.ObtainCompiledCloneDelegate(type)).Invoke(this, value);
+			return ((CloneDelegate<T>)this.ObtainCompiledCloneDelegate(type)).Invoke(this, original);
 		}
 		finally
 		{
@@ -96,20 +123,49 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		}
 	}
 
+	private T CallCloneListeners<T>(T original, T clone)
+	{
+		if (typeof(T).IsValueType)
+			return this.CallValueTypeCloneListeners(original, clone);
+		
+		if (!this.CallReferenceTypeCloneListenersDelegates.TryGetValue(typeof(T), out var rawDelegate))
+		{
+			rawDelegate = CallReferenceTypeCloneListenersMethod.MakeGenericMethod(typeof(T)).CreateDelegate<Func<DefaultCloneEngine, T, T, T>>();
+			this.CallReferenceTypeCloneListenersDelegates[typeof(T)] = rawDelegate;
+		}
+		
+		var @delegate = (Func<DefaultCloneEngine, T, T, T>)rawDelegate;
+		return @delegate(this, original, clone);
+	}
+
+	private T CallValueTypeCloneListeners<T>(T original, T clone)
+	{
+		foreach (var listener in this.CloneListeners)
+			listener.OnClone(this, original, ref clone);
+		return clone;
+	}
+
+	private T CallReferenceTypeCloneListeners<T>(T original, T clone) where T : class
+	{
+		foreach (var listener in this.ReferenceCloneListeners)
+			listener.OnClone(this, original, clone);
+		return clone;
+	}
+
 	private Delegate ObtainCompiledCloneDelegate(Type type)
 	{
 		if (!this.CompiledCloneDelegates.TryGetValue(type, out var @delegate))
 		{
-			@delegate = this.CreateDelegate(type);
+			@delegate = new(() => this.CreateDelegate(type));
 			this.CompiledCloneDelegates[type] = @delegate;
 		}
-		return @delegate;
+		return @delegate.Value;
 	}
 
-	private Delegate ObtainCorrectedTypeCloneDelegate<T>(T value)
+	private Delegate ObtainCorrectedTypeCloneDelegate<T>(T? value)
 	{
 		var supertype = typeof(T);
-		var subtype = value!.GetType();
+		var subtype = value is null || (typeof(T).IsConstructedGenericType && typeof(T).GetGenericTypeDefinition() == typeof(Nullable<>)) ? supertype : value.GetType();
 		var key = (Supertype: supertype, Subtype: subtype);
 		
 		if (!this.CorrectedTypeCloneDelegates.TryGetValue(key, out var @delegate))
@@ -119,6 +175,8 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 			il.Emit(OpCodes.Ldarg_0);
 			il.Emit(OpCodes.Ldarg_1);
+			if (supertype == typeof(object) && subtype.IsValueType)
+				il.Emit(OpCodes.Unbox_Any, subtype);
 			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CorrectedTypeClone), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(subtype));
 			if (supertype == typeof(object) && subtype.IsValueType)
 				il.Emit(OpCodes.Box, subtype);
@@ -262,6 +320,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 			switch (behavior)
 			{
 				case DefaultCloneEngineFieldFilterBehavior.Clone:
+					_ = ObtainCorrectedTypeCloneDelegateMethod.MakeGenericMethod(field.FieldType).Invoke(this, [null]);
 					il.Emit(type.IsValueType ? OpCodes.Ldloca : OpCodes.Ldloc, copyLocal);
 					il.Emit(OpCodes.Ldarg_0);
 					il.Emit(OpCodes.Ldarg_1);
@@ -321,37 +380,6 @@ public sealed class DefaultCloneEngine : ICloneEngine
 					break;
 				default:
 					throw new InvalidOperationException($"Invalid {nameof(DefaultCloneEngineFieldFilterBehavior)}");
-			}
-		}
-		#endregion
-		
-		#region Call listeners
-		if (type.IsValueType)
-		{
-			for (var i = 0; i < this.CloneListeners.Count; i++)
-			{
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldfld, CloneListenersField);
-				il.Emit(OpCodes.Ldc_I4, i);
-				il.Emit(OpCodes.Call, CloneDecoratorListGetItemMethod);
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldarg_1);
-				il.Emit(OpCodes.Ldloca, copyLocal);
-				il.Emit(OpCodes.Callvirt, typeof(ICloneListener).GetMethod(nameof(ICloneListener.OnClone))!.MakeGenericMethod(type));
-			}
-		}
-		else
-		{
-			for (var i = 0; i < this.ReferenceCloneListeners.Count; i++)
-			{
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldfld, ReferenceCloneListenersField);
-				il.Emit(OpCodes.Ldc_I4, i);
-				il.Emit(OpCodes.Call, ReferenceCloneDecoratorListGetItemMethod);
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldarg_1);
-				il.Emit(OpCodes.Ldloc, copyLocal);
-				il.Emit(OpCodes.Callvirt, typeof(IReferenceCloneListener).GetMethod(nameof(IReferenceCloneListener.OnClone))!.MakeGenericMethod(type));
 			}
 		}
 		#endregion

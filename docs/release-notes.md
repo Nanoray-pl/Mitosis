@@ -4,6 +4,9 @@
 
 ## Upcoming release
 
+* Added `ICloneEngine.TryClone`.
+* Added `DefaultCloneEngine.RegisterSpecializedEngine`.
+* Added `HashSetCloneEngine`.
 * Fixed parameterless constructors not being utilized.
 
 ## 2.0.4

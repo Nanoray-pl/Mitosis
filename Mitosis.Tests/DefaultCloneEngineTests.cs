@@ -44,6 +44,19 @@ public sealed class DefaultCloneEngineTests
 		TestSame(engine, "asdf");
 		TestSame(engine, TestEnum.C);
 	}
+
+	[Test]
+	public void TestNullable()
+	{
+		var engine = new DefaultCloneEngine();
+
+		TestSame<bool?>(engine, true);
+		TestSame<int?>(engine, 123);
+		TestSame<long?>(engine, 234L);
+		TestSame<float?>(engine, 345f);
+		TestSame<double?>(engine, 456.0);
+		TestSame<TestEnum?>(engine, TestEnum.C);
+	}
 	
 	[Test]
 	public void TestImmutable()
