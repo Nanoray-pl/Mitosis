@@ -2,7 +2,8 @@
 
 # Release notes
 
-## Upcoming release
+## 2.1.0
+Released 12 January 2025.
 
 * Added `ICloneEngine.TryClone`.
 * Added `DefaultCloneEngine.RegisterSpecializedEngine`.
