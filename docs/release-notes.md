@@ -4,6 +4,7 @@
 
 ## Upcoming release
 
+* Fixed clone listeners being called on value types, if they were cloned while boxed into `object`s.
 * Fixed `HashSetCloneEngine` not working when not using the `HashSet<>` type directly, but for example through the `ISet<>` interface.
 
 ## 2.1.0

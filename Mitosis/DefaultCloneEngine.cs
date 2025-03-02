@@ -20,6 +20,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 
 	private static readonly FieldInfo TrackedCopiesField = typeof(DefaultCloneEngine).GetField(nameof(TrackedCopies), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
 	private static readonly MethodInfo ObtainCorrectedTypeCloneDelegateMethod = typeof(DefaultCloneEngine).GetMethod(nameof(ObtainCorrectedTypeCloneDelegate), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
+	private static readonly MethodInfo CallCloneListenersMethod = typeof(DefaultCloneEngine).GetMethod(nameof(CallCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
 	private static readonly MethodInfo CallReferenceTypeCloneListenersMethod = typeof(DefaultCloneEngine).GetMethod(nameof(CallReferenceTypeCloneListeners), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!;
 	private static readonly MethodInfo GetTypeFromHandleMethod = typeof(Type).GetMethod(nameof(Type.GetTypeFromHandle))!;
 	private static readonly MethodInfo GetUninitializedObjectMethod = typeof(RuntimeHelpers).GetMethod(nameof(RuntimeHelpers.GetUninitializedObject))!;
@@ -53,6 +54,7 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		this.ReferenceCloneListeners.Add(listener);
 		if (listener is ICloneListener anyListener)
 			this.CloneListeners.Add(anyListener);
+		this.CompiledCloneDelegates.Clear();
 	}
 
 	/// <summary>
@@ -87,16 +89,12 @@ public sealed class DefaultCloneEngine : ICloneEngine
 		{
 			if (!engine.TryClone(original, out var specializedClone))
 				continue;
-			specializedClone = this.CallCloneListeners(original, specializedClone);
 			return specializedClone;
 		}
 		
 		if (original is null)
 			return default!;
-		
-		var clone = ((CloneDelegate<T>)this.ObtainCorrectedTypeCloneDelegate(original)).Invoke(this, original);
-		clone = this.CallCloneListeners(original, clone);
-		return clone;
+		return ((CloneDelegate<T>)this.ObtainCorrectedTypeCloneDelegate(original)).Invoke(this, original);
 	}
 
 	private T CorrectedTypeClone<T>(T original)
@@ -173,11 +171,23 @@ public sealed class DefaultCloneEngine : ICloneEngine
 			var method = new DynamicMethod("CorrectedTypeClone", supertype, [typeof(DefaultCloneEngine), supertype]);
 			var il = method.GetILGenerator();
 
-			il.Emit(OpCodes.Ldarg_0);
-			il.Emit(OpCodes.Ldarg_1);
-			if (supertype == typeof(object) && subtype.IsValueType)
-				il.Emit(OpCodes.Unbox_Any, subtype);
-			il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CorrectedTypeClone), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(subtype));
+			{
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldarg_1);
+				if (supertype == typeof(object) && subtype.IsValueType)
+					il.Emit(OpCodes.Unbox_Any, subtype);
+				
+				{
+					il.Emit(OpCodes.Ldarg_0);
+					il.Emit(OpCodes.Ldarg_1);
+					if (supertype == typeof(object) && subtype.IsValueType)
+						il.Emit(OpCodes.Unbox_Any, subtype);
+					il.Emit(OpCodes.Call, this.GetType().GetMethod(nameof(this.CorrectedTypeClone), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!.MakeGenericMethod(subtype));
+				}
+				
+				il.Emit(OpCodes.Call, CallCloneListenersMethod.MakeGenericMethod(subtype));
+			}
+			
 			if (supertype == typeof(object) && subtype.IsValueType)
 				il.Emit(OpCodes.Box, subtype);
 			il.Emit(OpCodes.Ret);
