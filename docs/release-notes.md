@@ -2,6 +2,10 @@
 
 # Release notes
 
+## Upcoming release
+
+* Fixed `HashSetCloneEngine` not working when using it on the same element type, but through different variable types - for example, `HashSet<>` and `ISet<>` once each.
+
 ## 2.1.1
 Released 2 March 2025.
 

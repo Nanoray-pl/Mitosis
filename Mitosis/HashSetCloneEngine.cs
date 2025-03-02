@@ -11,7 +11,7 @@ namespace Nanoray.Mitosis;
 public sealed class HashSetCloneEngine(ICloneEngine valueEngine) : ICloneEngine
 {
 	private static readonly MethodInfo GenericHashSetCloneMethod = typeof(HashSetCloneEngine).GetMethod(nameof(CloneHashSet), BindingFlags.Instance | BindingFlags.NonPublic)!;
-	private readonly Dictionary<Type, Delegate> DelegateCache = []; // delegate is Func<HashSetCloneEngine, T, T>
+	private readonly Dictionary<(Type VariableType, Type RealType), Delegate> DelegateCache = []; // delegate is Func<HashSetCloneEngine, T, T>
 	
 	/// <inheritdoc/>
 	public bool TryClone<T>(T original, [MaybeNullWhen(false)] out T clone)
@@ -22,15 +22,16 @@ public sealed class HashSetCloneEngine(ICloneEngine valueEngine) : ICloneEngine
 			return false;
 		}
 		
-		var originalType = original.GetType();
-		if (!originalType.IsConstructedGenericType || originalType.GetGenericTypeDefinition() != typeof(HashSet<>))
+		var variableType = typeof(T);
+		var realType = original.GetType();
+		if (!realType.IsConstructedGenericType || realType.GetGenericTypeDefinition() != typeof(HashSet<>))
 		{
 			clone = default;
 			return false;
 		}
 		
-		var elementType = originalType.GetGenericArguments()[0];
-		if (!this.DelegateCache.TryGetValue(elementType, out var @delegate))
+		var elementType = realType.GetGenericArguments()[0];
+		if (!this.DelegateCache.TryGetValue((variableType, realType), out var @delegate))
 		{
 			var cloneMethod = GenericHashSetCloneMethod.MakeGenericMethod(elementType);
 			if (typeof(T) == cloneMethod.ReturnType)
@@ -44,14 +45,14 @@ public sealed class HashSetCloneEngine(ICloneEngine valueEngine) : ICloneEngine
 
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldarg_1);
-				il.Emit(OpCodes.Castclass, originalType);
+				il.Emit(OpCodes.Castclass, realType);
 				il.Emit(OpCodes.Call, cloneMethod);
 				il.Emit(OpCodes.Castclass, typeof(T));
 				il.Emit(OpCodes.Ret);
 				
 				@delegate = dynamicMethod.CreateDelegate<Func<HashSetCloneEngine, T, T>>();
 			}
-			this.DelegateCache[elementType] = @delegate;
+			this.DelegateCache[(variableType, realType)] = @delegate;
 		}
 
 		clone = ((Func<HashSetCloneEngine, T, T>)@delegate).Invoke(this, original);
