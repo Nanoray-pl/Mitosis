@@ -2,6 +2,10 @@
 
 # Release notes
 
+## Upcoming release
+
+* Fixed `HashSetCloneEngine` not working when not using the `HashSet<>` type directly, but for example through the `ISet<>` interface.
+
 ## 2.1.0
 Released 12 January 2025.
 

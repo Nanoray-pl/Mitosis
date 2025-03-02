@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Reflection.Emit;
 
 namespace Nanoray.Mitosis;
 
@@ -31,8 +32,25 @@ public sealed class HashSetCloneEngine(ICloneEngine valueEngine) : ICloneEngine
 		var elementType = originalType.GetGenericArguments()[0];
 		if (!this.DelegateCache.TryGetValue(elementType, out var @delegate))
 		{
-			var method = GenericHashSetCloneMethod.MakeGenericMethod(elementType);
-			@delegate = method.CreateDelegate<Func<HashSetCloneEngine, T, T>>();
+			var cloneMethod = GenericHashSetCloneMethod.MakeGenericMethod(elementType);
+			if (typeof(T) == cloneMethod.ReturnType)
+			{
+				@delegate = cloneMethod.CreateDelegate<Func<HashSetCloneEngine, T, T>>();
+			}
+			else
+			{
+				var dynamicMethod = new DynamicMethod($"CloneHashSet{elementType}", typeof(T), [typeof(HashSetCloneEngine), typeof(T)]);
+				var il = dynamicMethod.GetILGenerator();
+
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldarg_1);
+				il.Emit(OpCodes.Castclass, originalType);
+				il.Emit(OpCodes.Call, cloneMethod);
+				il.Emit(OpCodes.Castclass, typeof(T));
+				il.Emit(OpCodes.Ret);
+				
+				@delegate = dynamicMethod.CreateDelegate<Func<HashSetCloneEngine, T, T>>();
+			}
 			this.DelegateCache[elementType] = @delegate;
 		}
 
